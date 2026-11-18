@@ -115,12 +115,15 @@ export async function submitReport(_prev: SubmitState, formData: FormData): Prom
     let target = existingCar;
     if (!target) {
       const name = input.newCarName!;
-      const [created] = await tx
-        .insert(schema.cars)
-        .values({ name, slug: await uniqueSlug(tx, name), status: "pending" })
-        .onConflictDoNothing()
-        .returning();
-      target = created ?? (await findCarByName(tx, name));
+      // Retry when a concurrent insert takes the same slug for a different name.
+      for (let attempt = 0; attempt < 3 && !target; attempt++) {
+        const [created] = await tx
+          .insert(schema.cars)
+          .values({ name, slug: await uniqueSlug(tx, name), status: "pending" })
+          .onConflictDoNothing()
+          .returning();
+        target = created ?? (await findCarByName(tx, name));
+      }
       if (!target) throw new Error("Could not create car");
     }
     await tx.insert(schema.reports).values({
