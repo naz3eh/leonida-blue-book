@@ -46,10 +46,6 @@ export async function submitReport(_prev: SubmitState, formData: FormData): Prom
   }
 
   const ipHash = hashIp(ip);
-  if (!(await checkReportRateLimit(ipHash))) {
-    return fail("You've sent 5 reports in the last hour. Please wait a bit before sending more.");
-  }
-
   const db = getDb();
 
   let existingCar: typeof schema.cars.$inferSelect | null = null;
@@ -85,7 +81,7 @@ export async function submitReport(_prev: SubmitState, formData: FormData): Prom
     }
   }
 
-  let screenshotUrl: string | null = null;
+  let clean: Awaited<ReturnType<typeof cleanScreenshot>> | null = null;
   if (input.screenshot) {
     if (!uploadsEnabled()) {
       return fail("Screenshot uploads aren't set up yet. Send the report without one.", {
@@ -93,10 +89,23 @@ export async function submitReport(_prev: SubmitState, formData: FormData): Prom
       });
     }
     try {
-      const clean = await cleanScreenshot(Buffer.from(await input.screenshot.arrayBuffer()));
-      screenshotUrl = await storeScreenshot(clean);
+      clean = await cleanScreenshot(Buffer.from(await input.screenshot.arrayBuffer()));
     } catch (err) {
       if (err instanceof ImageError) return fail(err.message, { screenshot: err.message });
+      throw err;
+    }
+  }
+
+  // Checked last so rejected reports don't use up the hourly quota.
+  if (!(await checkReportRateLimit(ipHash))) {
+    return fail("You've sent 5 reports in the last hour. Please wait a bit before sending more.");
+  }
+
+  let screenshotUrl: string | null = null;
+  if (clean) {
+    try {
+      screenshotUrl = await storeScreenshot(clean);
+    } catch (err) {
       console.error("screenshot upload failed", err);
       return fail("The screenshot couldn't be uploaded. Try again or send without it.");
     }
