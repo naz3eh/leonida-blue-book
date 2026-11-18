@@ -60,9 +60,10 @@ export async function renameCar(_prev: AdminState, formData: FormData): Promise<
   const [car] = await db
     .update(schema.cars)
     .set({ name, slug: await uniqueSlug(db, name, id) })
-    .where(eq(schema.cars.id, id))
+    .where(and(eq(schema.cars.id, id), eq(schema.cars.status, "pending")))
     .returning();
-  refresh(car?.slug);
+  if (!car) return { status: "error", message: "Only pending cars can be renamed." };
+  refresh(car.slug);
   return { status: "success", message: `Renamed to ${name}.` };
 }
 
@@ -73,6 +74,13 @@ export async function mergeCar(_prev: AdminState, formData: FormData): Promise<A
   if (!targetId || targetId === sourceId) return { status: "error", message: "Pick a car to merge into." };
   const db = getDb();
   const result = await db.transaction(async (tx) => {
+    // Lock the pending car so a report saved mid-merge can't be cascade-deleted with it.
+    const [source] = await tx
+      .select({ id: schema.cars.id })
+      .from(schema.cars)
+      .where(and(eq(schema.cars.id, sourceId), eq(schema.cars.status, "pending")))
+      .for("update");
+    if (!source) return "not-pending" as const;
     const [target] = await tx
       .select()
       .from(schema.cars)
@@ -80,9 +88,10 @@ export async function mergeCar(_prev: AdminState, formData: FormData): Promise<A
       .limit(1);
     if (!target) return null;
     await tx.update(schema.reports).set({ carId: target.id }).where(eq(schema.reports.carId, sourceId));
-    await tx.delete(schema.cars).where(and(eq(schema.cars.id, sourceId), eq(schema.cars.status, "pending")));
+    await tx.delete(schema.cars).where(eq(schema.cars.id, sourceId));
     return target;
   });
+  if (result === "not-pending") return { status: "error", message: "Only pending cars can be merged." };
   if (!result) return { status: "error", message: "That car is not approved." };
   refresh(result.slug);
   return { status: "success", message: `Merged into ${result.name}.` };
