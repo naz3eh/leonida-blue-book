@@ -21,6 +21,11 @@ export type SubmitState = {
 
 const DUPLICATE_WINDOW_MS = 24 * 3600_000;
 
+function isForeignKeyError(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === "23503" || e?.cause?.code === "23503";
+}
+
 function fail(message: string, fieldErrors?: Record<string, string>): SubmitState {
   return { status: "error", message, fieldErrors };
 }
@@ -111,31 +116,40 @@ export async function submitReport(_prev: SubmitState, formData: FormData): Prom
     }
   }
 
-  const car = await db.transaction(async (tx) => {
-    let target = existingCar;
-    if (!target) {
-      const name = input.newCarName!;
-      // Retry when a concurrent insert takes the same slug for a different name.
-      for (let attempt = 0; attempt < 3 && !target; attempt++) {
-        const [created] = await tx
-          .insert(schema.cars)
-          .values({ name, slug: await uniqueSlug(tx, name), status: "pending" })
-          .onConflictDoNothing()
-          .returning();
-        target = created ?? (await findCarByName(tx, name));
+  let car: typeof schema.cars.$inferSelect;
+  try {
+    car = await db.transaction(async (tx) => {
+      let target = existingCar;
+      if (!target) {
+        const name = input.newCarName!;
+        // Retry when a concurrent insert takes the same slug for a different name.
+        for (let attempt = 0; attempt < 3 && !target; attempt++) {
+          const [created] = await tx
+            .insert(schema.cars)
+            .values({ name, slug: await uniqueSlug(tx, name), status: "pending" })
+            .onConflictDoNothing()
+            .returning();
+          target = created ?? (await findCarByName(tx, name));
+        }
+        if (!target) throw new Error("Could not create car");
       }
-      if (!target) throw new Error("Could not create car");
-    }
-    await tx.insert(schema.reports).values({
-      carId: target.id,
-      source: input.source,
-      amount: input.amount,
-      platform: input.platform ?? null,
-      screenshotUrl,
-      ipHash,
+      await tx.insert(schema.reports).values({
+        carId: target.id,
+        source: input.source,
+        amount: input.amount,
+        platform: input.platform ?? null,
+        screenshotUrl,
+        ipHash,
+      });
+      return target;
     });
-    return target;
-  });
+  } catch (err) {
+    // A moderator merged or removed the car while this report was being saved.
+    if (isForeignKeyError(err)) {
+      return fail("That car was just changed by a moderator. Please send your report again.");
+    }
+    throw err;
+  }
 
   revalidatePath("/");
   revalidatePath(`/cars/${car.slug}`);
