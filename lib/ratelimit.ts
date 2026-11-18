@@ -30,8 +30,9 @@ export async function checkReportRateLimit(ipHash: string): Promise<boolean> {
   const rl = getLimiter();
   if (rl) {
     try {
-      const { success } = await rl.limit(ipHash);
-      return success;
+      const { success, reason } = await rl.limit(ipHash);
+      if (reason !== "timeout") return success;
+      console.error("Upstash rate limit timed out; falling back to the database count.");
     } catch (err) {
       console.error("Upstash rate limit failed; falling back to the database count.", err);
     }
