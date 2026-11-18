@@ -28,11 +28,16 @@ export async function cleanScreenshot(input: Buffer): Promise<CleanImage> {
   const pipeline = sharp(input, { limitInputPixels: 40_000_000 })
     .rotate()
     .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true });
-  const data =
-    format === "png"
-      ? await pipeline.png().toBuffer()
-      : format === "jpeg"
-        ? await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer()
-        : await pipeline.webp({ quality: 85 }).toBuffer();
+  let data: Buffer;
+  try {
+    data =
+      format === "png"
+        ? await pipeline.png().toBuffer()
+        : format === "jpeg"
+          ? await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer()
+          : await pipeline.webp({ quality: 85 }).toBuffer();
+  } catch {
+    throw new ImageError("That screenshot couldn't be read. Try another image or send without one");
+  }
   return { data, ...FORMATS[format] };
 }
