@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { getDb, schema } from "@/db";
-import { ADMIN_COOKIE, checkAdminToken, requireAdmin } from "@/lib/admin-auth";
+import { ADMIN_COOKIE, ADMIN_SESSION_SECONDS, checkAdminToken, requireAdmin } from "@/lib/admin-auth";
 import { findCarByName, uniqueSlug } from "@/lib/cars";
 import { carNameSchema } from "@/lib/schemas";
 
@@ -24,7 +24,7 @@ export async function login(_prev: AdminState, formData: FormData): Promise<Admi
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: ADMIN_SESSION_SECONDS,
   });
   revalidatePath("/admin");
   return { status: "success", message: "Signed in." };
