@@ -77,6 +77,10 @@ export function renderOg({
         <div style={{ display: "flex", fontSize: 26, color: ACCENT }}>{OG_BADGE}</div>
       </div>
     ),
-    OG_SIZE,
+    {
+      ...OG_SIZE,
+      // Prices change as reports come in, so don't let caches keep an image for long.
+      headers: { "cache-control": "public, max-age=0, s-maxage=300, stale-while-revalidate=3600" },
+    },
   );
 }
