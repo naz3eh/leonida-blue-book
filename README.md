@@ -99,14 +99,13 @@ E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/lbb_test pnpm test:
    - `IP_HASH_SALT` = output of `openssl rand -hex 32`
    - `ADMIN_TOKEN` = output of `openssl rand -hex 32`
    - Leave `LOCAL_UPLOADS` unset.
-7. **Run the migrations** against Neon from your machine:
+7. **Migrations run on deploy.** Production builds use the `vercel-build` script (`scripts/vercel-build.sh`), which runs `pnpm db:migrate` before `next build`. The build fails with a clear message if `DATABASE_URL` is missing. Preview builds skip migrations. To migrate by hand instead:
    ```bash
    pnpm install
    pnpm dlx vercel link
    pnpm dlx vercel env pull .env.local --environment=production
    pnpm db:migrate
    ```
-   Run `pnpm db:migrate` again whenever a new file lands in `db/migrations`.
 8. **Deploy.** Deployments → Redeploy (or push to `main`). Then open `/admin`, sign in with `ADMIN_TOKEN`, and approve cars as reports come in.
 
 ## License
